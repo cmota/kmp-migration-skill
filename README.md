@@ -1,0 +1,51 @@
+# kmp-migration-skill
+
+A [Claude skill](https://www.anthropic.com/news/claude-skills) for migrating Kotlin Multiplatform (KMP) projects from the old `composeApp` single-module structure to the new default structure introduced in May 2026.
+
+## What this skill does
+
+Guides Claude through helping you migrate a KMP/Compose Multiplatform project from this:
+
+```
+project/
+└── composeApp/   ← single module acting as both library and app entry point
+```
+
+To this:
+
+```
+project/
+├── shared/       ← KMP library with all shared code
+├── androidApp/   ← Android application module
+├── desktopApp/   ← Desktop application module
+├── webApp/       ← Web (WASM) application module
+└── iosApp/       ← Xcode project (unchanged)
+```
+
+## Why migrate?
+
+The new structure is the official default as of the [KMP wizard](https://kmp.new) update in May 2026. The key driver is **Android Gradle Plugin 9.0**, which requires the Android app entry point to be in a separate module from shared code.
+
+See the [JetBrains announcement](https://blog.jetbrains.com/kotlin/2026/05/new-kmp-default-structure/) for full details.
+
+## Skill contents
+
+- `SKILL.md` — main migration guide with step-by-step instructions for each module
+- `references/configurations.md` — variant structures for native UI (e.g. SwiftUI on iOS) and server-included projects
+
+## Installation
+
+Download `kmp-migration.skill` and install it in Claude via **Settings → Skills**.
+
+## Covered scenarios
+
+- Standard Compose Multiplatform (Android + iOS + Desktop + Web)
+- Native UI on some platforms (splits into `sharedLogic` + `sharedUI`)
+- Projects with a server module (adds `core/` + nests clients under `app/`)
+- AGP 9.0 compliance
+
+## References
+
+- [Official KMP migration guide](https://kotlinlang.org/docs/multiplatform/multiplatform-project-recommended-structure.html)
+- [AGP 9.0 update guide](https://blog.jetbrains.com/kotlin/2026/01/update-your-projects-for-agp9/)
+- [KMP wizard](https://kmp.new)
