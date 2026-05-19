@@ -1,0 +1,13 @@
+{
+    "name": "kmp-migration-skill",
+    "owner": {
+          "name": "cmota"
+    },
+    "plugins": [
+          {
+                  "name": "kmp-migration",
+                  "source": "./",
+                  "description": "Migrate KMP/Compose Multiplatform projects to the new default structure (shared + per-platform app modules). Covers Android, iOS, Desktop, Web, native UI, and server configurations."
+          }
+    ]
+}
