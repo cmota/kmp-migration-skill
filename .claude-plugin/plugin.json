@@ -1,0 +1,11 @@
+{
+    "name": "kmp-migration",
+    "version": "1.0.0",
+    "description": "Guides you through migrating a KMP/Compose Multiplatform project from the old composeApp single-module structure to the new default structure with separate shared, androidApp, desktopApp, and webApp modules.",
+    "author": {
+          "name": "cmota",
+          "url": "https://github.com/cmota"
+    },
+    "repository": "https://github.com/cmota/kmp-migration-skill",
+    "license": "MIT"
+}
