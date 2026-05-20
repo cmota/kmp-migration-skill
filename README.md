@@ -1,10 +1,10 @@
 # kmp-migration-skill
 
-A [Claude skill](https://www.anthropic.com/news/claude-skills) for migrating Kotlin Multiplatform (KMP) projects from the old `composeApp` single-module structure to the new default structure introduced in May 2026.
+An [agent skill](https://geminicli.com/docs/cli/skills/) for migrating Kotlin Multiplatform (KMP) projects from the old `composeApp` single-module structure to the new default structure introduced in May 2026. Compatible with Claude Code, GitHub Copilot, OpenAI Codex, and Gemini CLI.
 
 ## What this skill does
 
-Guides Claude through helping you migrate a KMP/Compose Multiplatform project from this:
+Guides the agent through helping you migrate a KMP/Compose Multiplatform project from this:
 
 ```
 project/
