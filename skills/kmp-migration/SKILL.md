@@ -185,12 +185,75 @@ unless those modules were created.
 
 ---
 
-### Step 7 — iOS: no structural change needed
+### Step 7 — Update iOS references
 
-`iosApp/` stays as-is. If you renamed the module, update the Xcode build phase:
+`iosApp/` stays as-is structurally, but renaming the module concept from `composeApp` to
+`shared` requires updating several iOS-side references. Both lowercase `composeApp` **and**
+uppercase `ComposeApp` must be searched — the uppercase form is used as the framework
+`baseName` and Swift import.
+
+**7a — Update the Gradle framework `baseName`**
+
+In `shared/build.gradle.kts` (or the root build file), find the XCFramework / framework
+configuration and change the `baseName`:
+
+```kotlin
+// Before
+kotlin {
+    iosX64 { binaries.framework { baseName = "ComposeApp" } }
+    // ...
+}
+
+// After
+kotlin {
+    iosX64 { binaries.framework { baseName = "Shared" } }
+    // ...
+}
+```
+
+**7b — Update the Xcode build phase**
+
+In Xcode → Build Phases → "Compile Kotlin Framework", update the Gradle task:
 ```
 ./gradlew :shared:assembleXCFramework
 ```
+
+**7c — Update Swift imports**
+
+Search `iosApp/` for `import ComposeApp` and replace with `import Shared`:
+
+```bash
+rg -n "ComposeApp" iosApp/ --glob '*.swift'
+```
+
+Update every occurrence in `.swift` files — typically `iOSApp.swift` and `ContentView.swift`.
+
+**7d — Update Podfile or SPM manifest (if applicable)**
+
+If using CocoaPods, update the pod name in `iosApp/Podfile`:
+```ruby
+# Before
+pod 'ComposeApp', :path => '../'
+
+# After
+pod 'Shared', :path => '../'
+```
+
+If using Swift Package Manager, update the target dependency name accordingly.
+
+**7e — Verify with `xcodebuild`, not just Gradle**
+
+A successful `./gradlew :shared:assembleXCFramework` does not guarantee the Xcode build
+works. Always verify with an actual Xcode build:
+
+```bash
+xcodebuild -project iosApp/iosApp.xcodeproj \
+  -scheme iosApp \
+  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  build
+```
+
+Or simply build from Xcode IDE to catch any remaining `ComposeApp` references.
 
 ---
 
@@ -201,12 +264,13 @@ unless those modules were created.
 - Search the project for stale module references before declaring the migration done:
 
 ```bash
-rg -n "composeApp" . --hidden \
+rg -n "composeApp|ComposeApp" . --hidden \
   --glob 'settings.gradle.kts' \
   --glob '**/*.gradle.kts' \
   --glob '.idea/**' \
   --glob '.github/**' \
-  --glob 'gradle/**'
+  --glob 'gradle/**' \
+  --glob 'iosApp/**'
 ```
 
 - **Update IDE metadata and run configurations.** IntelliJ / Android Studio may keep showing
@@ -257,13 +321,14 @@ and validation pass:
 ./gradlew :shared:compileKotlinIosSimulatorArm64
 ```
 
-3. Search for stale module references one last time:
+3. For iOS, verify with `xcodebuild` (see Step 7e) in addition to the Gradle tasks above.
+4. Search for stale module references one last time:
 
 ```bash
 rg -n "composeApp|ComposeApp" . --hidden --glob '!**/build/**' --glob '!**/.gradle/**' --glob '!**/.kotlin/**'
 ```
 
-4. In the final response, explicitly tell the user to run **File → Sync Project with Gradle
+5. In the final response, explicitly tell the user to run **File → Sync Project with Gradle
    Files** in Android Studio / IntelliJ, or close and reopen the IDE if stale `composeApp`
    configurations still appear. There is no reliable repository-only edit that forces an already
    open IDE window to complete a Gradle sync.
@@ -278,7 +343,7 @@ rg -n "composeApp|ComposeApp" . --hidden --glob '!**/build/**' --glob '!**/.grad
 
 **`expect`/`actual` not resolved** → Source set names in `shared` must match what they were in `composeApp`.
 
-**iOS build fails after rename** → Check "Compile Kotlin Framework" build phase in Xcode for the old module name.
+**iOS build fails after rename** → Search for both `composeApp` and `ComposeApp` in `iosApp/`. The uppercase form is the framework `baseName` and Swift import — update `baseName = "Shared"` in the Gradle build file, replace `import ComposeApp` with `import Shared` in all Swift files, update any Podfile or SPM references, and verify with `xcodebuild` rather than Gradle alone.
 
 **`composeApp` still appears in Edit Configurations or the Gradle tool window** → First check `settings.gradle.kts`; if it still has `include(":composeApp")`, replace it with `include(":shared")`, `include(":androidApp")`, and any created `desktopApp` / `webApp` modules. Then search `.idea` for `composeApp`. Remove or update stale entries in `.idea/gradle.xml`, `.idea/runConfigurations/*.xml`, `.idea/workspace.xml`, `.idea/deploymentTargetSelector.xml`, and `.idea/artifacts/composeApp_*.xml`, then re-sync Gradle.
 
