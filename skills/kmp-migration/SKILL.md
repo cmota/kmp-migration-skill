@@ -6,9 +6,11 @@ description: >
   the new default structure (with a `shared` library module and separate `androidApp`,
   `desktopApp`, `webApp` application modules). Also trigger for questions about the new KMP
   project structure, what changed in the KMP wizard, how to split `composeApp` into separate
-  modules, or how to comply with Android Gradle Plugin (AGP) 9.0's requirement to separate
-  app and library code. Use this even if the user phrases it casually, e.g. "how do I update
-  my KMP project structure", "split my composeApp module", or "AGP 9.0 breaking my KMP build".
+  modules, stale Android Studio or IntelliJ run configurations that still show `composeApp`,
+  or how to comply with Android Gradle Plugin (AGP) 9.0's requirement to separate app and
+  library code. Use this even if the user phrases it casually, e.g. "how do I update my KMP
+  project structure", "split my composeApp module", "composeApp still appears in Edit
+  Configurations", or "AGP 9.0 breaking my KMP build".
 ---
 
 # KMP Project Structure Migration
@@ -41,7 +43,8 @@ Before doing anything, ask or infer:
 2. **Does it have a server module?** If yes, see `references/configurations.md`
 3. **Does it use native UI on any platform?** (e.g. SwiftUI for iOS)
 4. **What AGP version is in use?** If AGP 9.0+, the migration is mandatory for Android targets.
-5. **Can they share their `build.gradle.kts` files?** Reading the actual files makes the migration more accurate.
+5. **Can they share their `settings.gradle.kts` and `build.gradle.kts` files?** Reading the actual files makes the migration more accurate.
+6. **Does the IDE still show `composeApp` after migration?** If yes, inspect `.idea` metadata as part of cleanup.
 
 ---
 
@@ -170,6 +173,16 @@ include(":webApp")       // if applicable
 
 Remove the old `:composeApp` include.
 
+If `composeApp` still appears in Android Studio / IntelliJ, verify this file first. The IDE
+will keep importing `composeApp` as long as `settings.gradle.kts` still contains:
+
+```kotlin
+include(":composeApp")
+```
+
+Replace it with only the modules that actually exist. Do not add `desktopApp` or `webApp`
+unless those modules were created.
+
 ---
 
 ### Step 7 — iOS: no structural change needed
@@ -185,11 +198,64 @@ Remove the old `:composeApp` include.
 
 - Delete the old `composeApp/` directory after verifying the build
 - Update CI scripts referencing `:composeApp` tasks
-- **Update IDE run configurations.** IntelliJ / Android Studio store run configurations under `.idea/runConfigurations/*.xml` and `.idea/workspace.xml`, and they still reference the old `:composeApp` Gradle tasks (`composeApp:installDebug`, `composeApp:run`, `composeApp:jsBrowserDevelopmentRun`, etc.). For each one:
-  - Android app → change the Gradle task / module to `:androidApp` (typically `:androidApp:installDebug`) and update the module setting in **Run → Edit Configurations → Android App → Module**.
-  - Desktop → change `composeApp:run` to `desktopApp:run`.
-  - Web (JS / wasm) → change `composeApp:jsBrowserDevelopmentRun` / `wasmJsBrowserDevelopmentRun` to `:webApp:jsBrowserDevelopmentRun` / `:webApp:wasmJsBrowserDevelopmentRun`.
-  - The pragmatic shortcut: delete the stale `.idea/runConfigurations/*.xml` entries (and the `<RunManager>` block in `.idea/workspace.xml` if needed) and let the IDE re-import the project — it will regenerate fresh configurations for the new modules. Commit the regenerated files so teammates don't hit the same issue.
+- Search the project for stale module references before declaring the migration done:
+
+```bash
+rg -n "composeApp" . --hidden \
+  --glob 'settings.gradle.kts' \
+  --glob '**/*.gradle.kts' \
+  --glob '.idea/**' \
+  --glob '.github/**' \
+  --glob 'gradle/**'
+```
+
+- **Update IDE metadata and run configurations.** IntelliJ / Android Studio may keep showing
+  `composeApp` even after the source migration if any of these files still reference it:
+  - `.idea/gradle.xml` module entries such as `$PROJECT_DIR$/composeApp`
+  - `.idea/runConfigurations/*.xml` and `.idea/workspace.xml` run manager entries
+  - `.idea/deploymentTargetSelector.xml` entries such as `runConfigName="composeApp"`
+  - `.idea/artifacts/composeApp_*.xml` generated artifact definitions
+- For each stale run task:
+  - Android app: change `:composeApp:installDebug` / `composeApp:installDebug` to `:androidApp:installDebug`, and update **Run → Edit Configurations → Android App → Module** to `androidApp`.
+  - Desktop: change `:composeApp:run` / `composeApp:run` to `:desktopApp:run`.
+  - Web: change `:composeApp:jsBrowserDevelopmentRun`, `:composeApp:wasmJsBrowserDevelopmentRun`, or unqualified equivalents to the matching `:webApp:*BrowserDevelopmentRun` task.
+- If the IDE files are not intentionally versioned, the pragmatic shortcut is to close the IDE,
+  delete stale `.idea/runConfigurations/*.xml`, `.idea/artifacts/composeApp_*.xml`, and the
+  `composeApp` entries in `.idea/gradle.xml`, `.idea/deploymentTargetSelector.xml`, and
+  `.idea/workspace.xml`, then re-open and sync Gradle.
+- Commit updated shared IDE files if the repository tracks them, so teammates do not keep
+  importing or launching `composeApp`.
+
+---
+
+### Step 9 — Sync and verify before finishing
+
+Do not end the migration immediately after editing files. Finish with a project synchronization
+and validation pass:
+
+1. Run `./gradlew projects` and confirm the output lists the new modules and does not list
+   `:composeApp`.
+2. Run the relevant compile/build tasks for the targets that exist, for example:
+
+```bash
+./gradlew :shared:compileKotlinMetadata
+./gradlew :androidApp:assembleDebug
+./gradlew :desktopApp:compileKotlin
+./gradlew :webApp:compileKotlinJs
+./gradlew :webApp:compileKotlinWasmJs
+./gradlew :shared:compileKotlinIosSimulatorArm64
+```
+
+3. Search for stale module references one last time:
+
+```bash
+rg -n "composeApp|ComposeApp" . --hidden --glob '!**/build/**' --glob '!**/.gradle/**' --glob '!**/.kotlin/**'
+```
+
+4. In the final response, explicitly tell the user to run **File → Sync Project with Gradle
+   Files** in Android Studio / IntelliJ, or close and reopen the IDE if stale `composeApp`
+   configurations still appear. There is no reliable repository-only edit that forces an already
+   open IDE window to complete a Gradle sync.
 
 ---
 
@@ -203,7 +269,14 @@ Remove the old `:composeApp` include.
 
 **iOS build fails after rename** → Check "Compile Kotlin Framework" build phase in Xcode for the old module name.
 
-**Run configuration still launches `:composeApp` (or fails with "Task ':composeApp:…' not found")** → IDE run configurations under `.idea/runConfigurations/` and `.idea/workspace.xml` were not updated when the modules were renamed. Either edit each config's Gradle task / module fields to point at `:androidApp`, `:desktopApp`, or `:webApp`, or delete the stale XML files and let the IDE recreate them on next sync.
+**`composeApp` still appears in Edit Configurations or the Gradle tool window** → First check `settings.gradle.kts`; if it still has `include(":composeApp")`, replace it with `include(":shared")`, `include(":androidApp")`, and any created `desktopApp` / `webApp` modules. Then search `.idea` for `composeApp`. Remove or update stale entries in `.idea/gradle.xml`, `.idea/runConfigurations/*.xml`, `.idea/workspace.xml`, `.idea/deploymentTargetSelector.xml`, and `.idea/artifacts/composeApp_*.xml`, then re-sync Gradle.
+
+**Run configuration still launches `:composeApp` (or fails with "Task ':composeApp:…' not found")** → IDE run configurations were not updated when the modules were renamed. Either edit each config's Gradle task / module fields to point at `:androidApp`, `:desktopApp`, or `:webApp`, or delete the stale XML files and let the IDE recreate them on next sync.
+
+**Edits look correct but the IDE still shows old modules** → Run **File → Sync Project with
+Gradle Files**. If Android Studio / IntelliJ was open during the migration and still shows
+stale entries after sync, close and reopen the project so it reloads `settings.gradle.kts` and
+the updated `.idea` metadata.
 
 ---
 
