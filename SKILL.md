@@ -6,9 +6,11 @@ description: >
   the new default structure (with a `shared` library module and separate `androidApp`,
   `desktopApp`, `webApp` application modules). Also trigger for questions about the new KMP
   project structure, what changed in the KMP wizard, how to split `composeApp` into separate
-  modules, or how to comply with Android Gradle Plugin (AGP) 9.0's requirement to separate
-  app and library code. Use this even if the user phrases it casually, e.g. "how do I update
-  my KMP project structure", "split my composeApp module", or "AGP 9.0 breaking my KMP build".
+  modules, stale Android Studio or IntelliJ run configurations that still show `composeApp`,
+  or how to comply with Android Gradle Plugin (AGP) 9.0's requirement to separate app and
+  library code. Use this even if the user phrases it casually, e.g. "how do I update my KMP
+  project structure", "split my composeApp module", "composeApp still appears in Edit
+  Configurations", or "AGP 9.0 breaking my KMP build".
 ---
 
 # KMP Project Structure Migration
@@ -27,27 +29,7 @@ caused several problems:
 - iOS was already in a separate `iosApp` folder — the other platforms were inconsistently co-located
 - Amper-based projects already used separate modules per app; Gradle projects were out of step
 
-The new structure separates concerns clearly:
-
-```
-project/
-├── shared/               ← KMP library: all shared Kotlin/Compose code
-│   └── src/
-│       ├── commonMain/
-│       ├── androidMain/
-│       ├── iosMain/
-│       ├── desktopMain/
-│       └── wasmJsMain/
-├── androidApp/           ← Android application module (AGP com.android.application)
-├── desktopApp/           ← JVM desktop application module
-├── webApp/               ← WASM/JS web application module
-├── iosApp/               ← Xcode project (unchanged)
-├── gradle/
-│   └── libs.versions.toml
-└── settings.gradle.kts
-```
-
-For variant configurations, see `references/configurations.md`.
+The new structure separates concerns clearly. For variant configurations (native UI, server), see `references/configurations.md`.
 
 ---
 
@@ -58,31 +40,17 @@ For variant configurations, see `references/configurations.md`.
 Before doing anything, ask or infer:
 
 1. **Which targets does the project support?** (Android, iOS, desktop, web/WASM)
-2. **Does it have a server module?** If yes, see `references/configurations.md` → "With Server"
-3. **Does it use native UI on any platform?** (e.g. SwiftUI for iOS) → see `references/configurations.md` → "Native UI"
+2. **Does it have a server module?** If yes, see `references/configurations.md`
+3. **Does it use native UI on any platform?** (e.g. SwiftUI for iOS)
 4. **What AGP version is in use?** If AGP 9.0+, the migration is mandatory for Android targets.
-5. **Do they have the project open or can they share their `build.gradle.kts` files?** Reading the actual files makes the migration much more accurate.
-
-If the user shares files or a directory tree, read them carefully before giving instructions. The
-exact package names, dependency declarations, and source set structure all matter.
+5. **Can they share their `settings.gradle.kts` and `build.gradle.kts` files?** Reading the actual files makes the migration more accurate.
+6. **Does the IDE still show `composeApp` after migration?** If yes, inspect `.idea` metadata as part of cleanup.
 
 ---
 
 ### Step 2 — Create the `shared` module
 
-The `shared` module is a straight extraction of the KMP library portions from `composeApp`.
-
-**What moves to `shared`:**
-- All `src/commonMain/`, `src/androidMain/`, `src/iosMain/`, `src/desktopMain/`, `src/wasmJsMain/` source sets
-- All shared dependencies (Compose, serialization, coroutines, etc.)
-- The `kotlin("multiplatform")` plugin configuration
-- `compose.components.resources` resource declarations
-
-**What does NOT move:**
-- The `com.android.application` plugin and its configuration (stays in `androidApp`)
-- Desktop `application { }` block (stays in `desktopApp`)
-- WASM/JS `binaries.executable()` for web app entry (stays in `webApp`)
-- App-specific signing configs, package IDs, version codes
+Extract the KMP library portions from `composeApp`. Move all source sets (commonMain, androidMain, iosMain, desktopMain, wasmJsMain), shared dependencies, and resources. Do NOT move: `com.android.application` plugin, desktop `application {}` block, or app-specific signing/package config.
 
 **`shared/build.gradle.kts` skeleton:**
 
@@ -91,7 +59,7 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.androidLibrary)   // ← library, not application
+    alias(libs.plugins.androidLibrary)   // library, not application
 }
 
 kotlin {
@@ -106,17 +74,13 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.components.resources)
-            // ... other shared deps
         }
-        androidMain.dependencies { /* android-specific shared deps */ }
-        val desktopMain by getting { dependencies { /* desktop-specific */ } }
     }
 }
 
 android {
     namespace = "com.example.myapp.shared"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
-    // minSdk, compileOptions — same as before, but NO applicationId, versionCode, etc.
 }
 ```
 
@@ -124,9 +88,7 @@ android {
 
 ### Step 3 — Create `androidApp` module
 
-This is a standard Android application module that depends on `shared`.
-
-**`androidApp/build.gradle.kts`:**
+Standard Android application module that depends on `shared`.
 
 ```kotlin
 plugins {
@@ -137,47 +99,24 @@ plugins {
 
 android {
     namespace = "com.example.myapp"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
     defaultConfig {
         applicationId = "com.example.myapp"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
     }
-    // signing configs, build types, etc.
 }
 
 dependencies {
     implementation(projects.shared)
     implementation(libs.androidx.activity.compose)
-    // other Android-only deps
 }
 ```
 
-**`androidApp/src/main/`** contains only the Android entry point:
-- `AndroidManifest.xml`
-- `MainActivity.kt` (calls into shared Compose UI)
-- Any Android-specific resources (`res/`)
-
-Move these from `composeApp/src/androidMain/` (or wherever they were). The `MainActivity` body
-typically just calls a shared `App()` composable:
-
-```kotlin
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent { App() }
-    }
-}
-```
+Move `AndroidManifest.xml`, `MainActivity.kt`, and `res/` from `composeApp/src/androidMain/`. MainActivity just calls the shared `App()` composable.
 
 ---
 
 ### Step 4 — Create `desktopApp` module (if applicable)
-
-**`desktopApp/build.gradle.kts`:**
 
 ```kotlin
 plugins {
@@ -192,21 +131,15 @@ dependencies {
 }
 
 compose.desktop {
-    application {
-        mainClass = "com.example.myapp.MainKt"
-        // nativeDistributions { ... }
-    }
+    application { mainClass = "com.example.myapp.MainKt" }
 }
 ```
 
-Move `main()` / `application { Window(...) }` from `composeApp/src/desktopMain/` into
-`desktopApp/src/main/kotlin/`.
+Move `main()` from `composeApp/src/desktopMain/` into `desktopApp/src/main/kotlin/`.
 
 ---
 
 ### Step 5 — Create `webApp` module (if applicable)
-
-**`webApp/build.gradle.kts`:**
 
 ```kotlin
 plugins {
@@ -218,84 +151,138 @@ plugins {
 kotlin {
     wasmJs {
         moduleName = "webApp"
-        browser {
-            commonWebpackConfig { outputFileName = "webApp.js" }
-        }
+        browser { commonWebpackConfig { outputFileName = "webApp.js" } }
         binaries.executable()
     }
-
     sourceSets {
-        commonMain.dependencies {
-            implementation(projects.shared)
-        }
+        commonMain.dependencies { implementation(projects.shared) }
     }
 }
 ```
 
-Move `index.html`, the WASM entry `main.kt`, and any web-specific resources into `webApp/`.
-
 ---
 
 ### Step 6 — Update `settings.gradle.kts`
-
-Include all new modules:
 
 ```kotlin
 include(":shared")
 include(":androidApp")
 include(":desktopApp")   // if applicable
 include(":webApp")       // if applicable
-// :iosApp is an Xcode project, not a Gradle module — no change needed
 ```
 
 Remove the old `:composeApp` include.
+
+If `composeApp` still appears in Android Studio / IntelliJ, verify this file first. The IDE
+will keep importing `composeApp` as long as `settings.gradle.kts` still contains:
+
+```kotlin
+include(":composeApp")
+```
+
+Replace it with only the modules that actually exist. Do not add `desktopApp` or `webApp`
+unless those modules were created.
 
 ---
 
 ### Step 7 — iOS: no structural change needed
 
-`iosApp/` stays exactly as it is. It already consumes the shared Kotlin framework via Xcode.
-The only thing that may need updating is the framework name in the Xcode build phase if you
-renamed the module (from `ComposeApp` to `Shared`):
-
-In Xcode → Build Phases → "Compile Kotlin Framework", update the Gradle task reference:
+`iosApp/` stays as-is. If you renamed the module, update the Xcode build phase:
 ```
 ./gradlew :shared:assembleXCFramework
 ```
-And update the `Podfile` or SPM manifest if you use those to reference the new framework name.
 
 ---
 
 ### Step 8 — Clean up
 
-- Delete the old `composeApp/` directory (after verifying everything builds)
-- Update any CI scripts that referenced `:composeApp` tasks
-- Update run configurations in IntelliJ IDEA / Android Studio
+- Delete the old `composeApp/` directory after verifying the build
+- Update CI scripts referencing `:composeApp` tasks
+- Search the project for stale module references before declaring the migration done:
+
+```bash
+rg -n "composeApp" . --hidden \
+  --glob 'settings.gradle.kts' \
+  --glob '**/*.gradle.kts' \
+  --glob '.idea/**' \
+  --glob '.github/**' \
+  --glob 'gradle/**'
+```
+
+- **Update IDE metadata and run configurations.** IntelliJ / Android Studio may keep showing
+  `composeApp` even after the source migration if any of these files still reference it:
+  - `.idea/gradle.xml` module entries such as `$PROJECT_DIR$/composeApp`
+  - `.idea/runConfigurations/*.xml` and `.idea/workspace.xml` run manager entries
+  - `.idea/deploymentTargetSelector.xml` entries such as `runConfigName="composeApp"`
+  - `.idea/artifacts/composeApp_*.xml` generated artifact definitions
+- For each stale run task:
+  - Android app: change `:composeApp:installDebug` / `composeApp:installDebug` to `:androidApp:installDebug`, and update **Run → Edit Configurations → Android App → Module** to `androidApp`.
+  - Desktop: change `:composeApp:run` / `composeApp:run` to `:desktopApp:run`.
+  - Web: change `:composeApp:jsBrowserDevelopmentRun`, `:composeApp:wasmJsBrowserDevelopmentRun`, or unqualified equivalents to the matching `:webApp:*BrowserDevelopmentRun` task.
+- If the IDE files are not intentionally versioned, the pragmatic shortcut is to close the IDE,
+  delete stale `.idea/runConfigurations/*.xml`, `.idea/artifacts/composeApp_*.xml`, and the
+  `composeApp` entries in `.idea/gradle.xml`, `.idea/deploymentTargetSelector.xml`, and
+  `.idea/workspace.xml`, then re-open and sync Gradle.
+- Commit updated shared IDE files if the repository tracks them, so teammates do not keep
+  importing or launching `composeApp`.
+
+---
+
+### Step 9 — Sync and verify before finishing
+
+Do not end the migration immediately after editing files. Finish with a project synchronization
+and validation pass:
+
+1. Run `./gradlew projects` and confirm the output lists the new modules and does not list
+   `:composeApp`.
+2. Run the relevant compile/build tasks for the targets that exist, for example:
+
+```bash
+./gradlew :shared:compileKotlinMetadata
+./gradlew :androidApp:assembleDebug
+./gradlew :desktopApp:compileKotlin
+./gradlew :webApp:compileKotlinJs
+./gradlew :webApp:compileKotlinWasmJs
+./gradlew :shared:compileKotlinIosSimulatorArm64
+```
+
+3. Search for stale module references one last time:
+
+```bash
+rg -n "composeApp|ComposeApp" . --hidden --glob '!**/build/**' --glob '!**/.gradle/**' --glob '!**/.kotlin/**'
+```
+
+4. In the final response, explicitly tell the user to run **File → Sync Project with Gradle
+   Files** in Android Studio / IntelliJ, or close and reopen the IDE if stale `composeApp`
+   configurations still appear. There is no reliable repository-only edit that forces an already
+   open IDE window to complete a Gradle sync.
 
 ---
 
 ## Common Issues
 
-**"Cannot apply `com.android.application` to a multiplatform module"**
-→ This is the AGP 9.0 error. The fix is exactly this migration: move the application plugin
-to its own `androidApp` module.
+**"Cannot apply `com.android.application` to a multiplatform module"** → AGP 9.0 error. Move the app plugin to `androidApp`.
 
-**Duplicate resources / `composeResources` not found**
-→ Make sure `compose.components.resources` is only declared in `shared`, and that the
-`androidApp`/`desktopApp` modules depend on `projects.shared`, not on a raw JAR.
+**Duplicate resources / `composeResources` not found** → Keep `compose.components.resources` only in `shared`; app modules depend on `projects.shared`.
 
-**`expect`/`actual` declarations not resolved**
-→ Confirm the source sets in `shared` still have the same names as before. If you renamed
-source sets, update `actual` declarations to match.
+**`expect`/`actual` not resolved** → Source set names in `shared` must match what they were in `composeApp`.
 
-**iOS build fails after rename**
-→ Check the Xcode scheme's "Compile Kotlin Framework" build phase for the old module name.
+**iOS build fails after rename** → Check "Compile Kotlin Framework" build phase in Xcode for the old module name.
+
+**`composeApp` still appears in Edit Configurations or the Gradle tool window** → First check `settings.gradle.kts`; if it still has `include(":composeApp")`, replace it with `include(":shared")`, `include(":androidApp")`, and any created `desktopApp` / `webApp` modules. Then search `.idea` for `composeApp`. Remove or update stale entries in `.idea/gradle.xml`, `.idea/runConfigurations/*.xml`, `.idea/workspace.xml`, `.idea/deploymentTargetSelector.xml`, and `.idea/artifacts/composeApp_*.xml`, then re-sync Gradle.
+
+**Run configuration still launches `:composeApp` (or fails with "Task ':composeApp:…' not found")** → IDE run configurations were not updated when the modules were renamed. Either edit each config's Gradle task / module fields to point at `:androidApp`, `:desktopApp`, or `:webApp`, or delete the stale XML files and let the IDE recreate them on next sync.
+
+**Edits look correct but the IDE still shows old modules** → Run **File → Sync Project with
+Gradle Files**. If Android Studio / IntelliJ was open during the migration and still shows
+stale entries after sync, close and reopen the project so it reloads `settings.gradle.kts` and
+the updated `.idea` metadata.
 
 ---
 
 ## References
 
-- `references/configurations.md` — variant structures: native UI, with server module
+- `references/configurations.md` — native UI and server-module variants
 - Official migration guide: https://kotlinlang.org/docs/multiplatform/multiplatform-project-recommended-structure.html
 - AGP 9.0 changes: https://blog.jetbrains.com/kotlin/2026/01/update-your-projects-for-agp9/
 - KMP wizard: https://kmp.new
