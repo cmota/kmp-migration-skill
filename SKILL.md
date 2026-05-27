@@ -215,10 +215,21 @@ rg -n "composeApp" . --hidden \
   - `.idea/runConfigurations/*.xml` and `.idea/workspace.xml` run manager entries
   - `.idea/deploymentTargetSelector.xml` entries such as `runConfigName="composeApp"`
   - `.idea/artifacts/composeApp_*.xml` generated artifact definitions
-- For each stale run task:
-  - Android app: change `:composeApp:installDebug` / `composeApp:installDebug` to `:androidApp:installDebug`, and update **Run → Edit Configurations → Android App → Module** to `androidApp`.
-  - Desktop: change `:composeApp:run` / `composeApp:run` to `:desktopApp:run`.
-  - Web: change `:composeApp:jsBrowserDevelopmentRun`, `:composeApp:wasmJsBrowserDevelopmentRun`, or unqualified equivalents to the matching `:webApp:*BrowserDevelopmentRun` task.
+- **Exact run configuration field mappings** — update each stale config as follows:
+
+  | Field | Old value | New value |
+  |---|---|---|
+  | Android run config name | `Android App.composeApp` | `Android App.androidApp` |
+  | Android module field | `Breeze.composeApp` | `Breeze.androidApp` |
+  | Desktop config (hot reload) | `composeApp [jvm, hot]` | `desktopApp [jvm, hot]` |
+  | Desktop config (standard) | `composeApp [jvm]` | `desktopApp [jvm]` |
+  | Web config (JS) | `composeApp [js]` | `webApp [js]` |
+  | Web config (WASM) | `composeApp [wasmJs]` | `webApp [wasmJs]` |
+  | Gradle project path (desktop) | `$PROJECT_DIR$/composeApp` | `$PROJECT_DIR$/desktopApp` |
+  | Gradle project path (web) | `$PROJECT_DIR$/composeApp` | `$PROJECT_DIR$/webApp` |
+  | Desktop hot-reload task | `hotRunJvm` | `hotRun` |
+  | Desktop standard task | `jvmRun` | `run` |
+
 - If the IDE files are not intentionally versioned, the pragmatic shortcut is to close the IDE,
   delete stale `.idea/runConfigurations/*.xml`, `.idea/artifacts/composeApp_*.xml`, and the
   `composeApp` entries in `.idea/gradle.xml`, `.idea/deploymentTargetSelector.xml`, and
@@ -271,7 +282,7 @@ rg -n "composeApp|ComposeApp" . --hidden --glob '!**/build/**' --glob '!**/.grad
 
 **`composeApp` still appears in Edit Configurations or the Gradle tool window** → First check `settings.gradle.kts`; if it still has `include(":composeApp")`, replace it with `include(":shared")`, `include(":androidApp")`, and any created `desktopApp` / `webApp` modules. Then search `.idea` for `composeApp`. Remove or update stale entries in `.idea/gradle.xml`, `.idea/runConfigurations/*.xml`, `.idea/workspace.xml`, `.idea/deploymentTargetSelector.xml`, and `.idea/artifacts/composeApp_*.xml`, then re-sync Gradle.
 
-**Run configuration still launches `:composeApp` (or fails with "Task ':composeApp:…' not found")** → IDE run configurations were not updated when the modules were renamed. Either edit each config's Gradle task / module fields to point at `:androidApp`, `:desktopApp`, or `:webApp`, or delete the stale XML files and let the IDE recreate them on next sync.
+**Run configuration still launches `:composeApp` (or fails with "Task ':composeApp:…' not found")** → IDE run configurations were not updated. Use the field mapping table in Step 8 to update each config's name, module, Gradle project path, and task name. Or delete the stale XML files and let the IDE recreate them on next sync.
 
 **Edits look correct but the IDE still shows old modules** → Run **File → Sync Project with
 Gradle Files**. If Android Studio / IntelliJ was open during the migration and still shows
